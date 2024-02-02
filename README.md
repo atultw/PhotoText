@@ -1,8 +1,8 @@
 #  PhotoText
 
-This library provides a text field that can be edited using the keyboard or camera text detection. 
+This library provides a text field that enables both keyboard and camera text-recognition input.
 
-
+![Demo](/ptdemo.gif?raw=true "Demo")
 
 Features:
 * SwiftUI and UIKit support
