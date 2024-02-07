@@ -254,7 +254,7 @@ public class PTRecognitionCameraViewController: PTCameraViewController {
     }
     
     private var detectionOverlay: CALayer! = nil
-    private var salientOverlay: CALayer! = nil
+//    private var salientOverlay: CALayer! = nil
     private let motionQueue = OperationQueue()
     private var requests = [VNRequest]()
     private var transform = CGAffineTransform()
@@ -456,9 +456,9 @@ public class PTRecognitionCameraViewController: PTCameraViewController {
         // center the layer
         detectionOverlay.position = CGPoint(x: bounds.midX, y: bounds.midY)
         
-        salientOverlay.setAffineTransform(transform)
+//        salientOverlay.setAffineTransform(transform)
         // center the layer
-        salientOverlay.position = CGPoint(x: bounds.midX, y: bounds.midY)
+//        salientOverlay.position = CGPoint(x: bounds.midX, y: bounds.midY)
         
         CATransaction.commit()
         
