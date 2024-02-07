@@ -23,6 +23,13 @@ import UIKit
 ///     - textStyle: The font style to use in the text field and placeholder
 
 public struct PhotoTextField: View {
+    public init(text: Binding<String>, mode: Binding<PTMode>, placeholder: String, textStyle: UIFont.TextStyle) {
+        self._text = text
+        self._mode = mode
+        self.placeholder = placeholder
+        self.textStyle = textStyle
+    }
+    
     @State private var height: CGFloat = 100
     @Binding public var text: String
     @Binding public var mode: PTMode
