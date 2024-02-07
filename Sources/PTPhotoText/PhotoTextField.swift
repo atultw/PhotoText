@@ -24,10 +24,10 @@ import UIKit
 
 public struct PhotoTextField: View {
     @State private var height: CGFloat = 100
-    @Binding var text: String
-    @Binding var mode: PTMode
-    var placeholder: String
-    var textStyle: UIFont.TextStyle
+    @Binding public var text: String
+    @Binding public var mode: PTMode
+    public var placeholder: String
+    public var textStyle: UIFont.TextStyle
     
     
     public var body: some View {
