@@ -10,14 +10,21 @@ import SwiftUI
 import UIKit
 
 struct CameraView: UIViewControllerRepresentable {
-    var sendReading: ((PTSelection) -> ())
+    var sendTapReading: ((PTSelection) -> ())
+    var sendDragReading: ([String]) -> ()
 //    @Binding var zoomMultiplier: Double
     @Binding var freeze: Bool
     
     func makeUIViewController(context: Context) -> PTRecognitionCameraViewController {
         let vc = PTRecognitionCameraViewController()
+        
         vc.didTapText = {
-            sendReading(.text($0))
+            sendTapReading(.text($0))
+            return true
+        }
+        
+        vc.didDragToSelect = {
+            sendDragReading($0)
             return true
         }
         

@@ -54,8 +54,6 @@ public class PTCameraViewController: UIViewController, AVCaptureVideoDataOutputS
         pauseButtonWrapper.addSubview(pauseButton)
         
         pauseButtonWrapper.backgroundColor = UIColor.label.withAlphaComponent(0.9)
-        let tap = UITapGestureRecognizer(target: self, action: #selector(self.handleTap(_:)))
-        pauseButtonWrapper.addGestureRecognizer(tap)
         
         //        let circle = CAShapeLayer()
         //        let circularPath = UIBezierPath(roundedRect: CGRect(x:0, y:0, width: pauseButtonWrapper.frame.size.width, height: pauseButtonWrapper.frame.size.height), cornerRadius:max(pauseButtonWrapper.frame.size.width, pauseButtonWrapper.frame.size.height))
@@ -88,21 +86,19 @@ public class PTCameraViewController: UIViewController, AVCaptureVideoDataOutputS
         self.pauseButton = pauseButton
         
         self.view.bringSubviewToFront(pauseButtonWrapper)
+        
+        let tapGestureRecognizer = UITapGestureRecognizer(target: self, action: #selector(self.didTap(_:)))
+        pauseButtonWrapper.addGestureRecognizer(tapGestureRecognizer)
+        
     }
     
-    @objc func handleTap(_ sender: UITapGestureRecognizer? = nil) {
+    @objc func didTap(_ sender: UITapGestureRecognizer? = nil) {
         cameraQueue.async {
             if self.session.isRunning {
                 self.freezeFeed()
-                DispatchQueue.main.async {
-                    self.pauseButton?.isHighlighted = true
-                }
+                
             } else {
                 self.resumeFeed()
-                DispatchQueue.main.async {
-                    self.pauseButton?.isHighlighted = false
-                }
-                
             }
         }
     }
@@ -224,6 +220,62 @@ public class PTCameraViewController: UIViewController, AVCaptureVideoDataOutputS
 public class PTRecognitionCameraViewController: PTCameraViewController {
     
     public var didTapText: ((String) -> (Bool))? // return bool is whether it should be marked "used"
+    public var didDragToSelect: (([String]) -> (Bool))?
+    
+    public override func viewDidLoad() {
+        super.viewDidLoad()
+        
+        let panGestureRecognizer = UIPanGestureRecognizer(target: self, action: #selector(self.didPan(_:)))
+        self.view.addGestureRecognizer(panGestureRecognizer)
+        
+        
+        dragSelectionOverlay = CALayer()
+        dragSelectionOverlay.name = "DragSelectionOverlay"
+        dragSelectionOverlay.bounds = CGRect(x: 0.0,
+                                             y: 0.0,
+                                             width: bufferSize.width,
+                                             height: bufferSize.height)
+        dragSelectionOverlay.position = CGPoint(x: self.view.layer.bounds.midX, y: self.view.layer.bounds.midY)
+        dragSelectionOverlay.zPosition = 3
+        self.view.layer.addSublayer(dragSelectionOverlay)
+    }
+    
+    private var panOrigin: CGPoint = CGPointZero
+    
+    @objc private func didPan(_ sender: UIPanGestureRecognizer) {
+        dragSelectionOverlay.removeAllAnimations()
+        switch sender.state {
+        case .began:
+            dragSelectionOverlay.backgroundColor = UIColor.systemCyan.withAlphaComponent(0.3).cgColor
+            panOrigin = sender.location(in: self.view)
+            self.freezeFeed()
+        case .changed:
+            dragSelectionOverlay.backgroundColor = UIColor.systemCyan.withAlphaComponent(0.3).cgColor
+            dragSelectionOverlay.frame = CGRect(origin: panOrigin, size: CGSize(width: sender.translation(in: self.view).x, height: sender.translation(in: self.view).y))
+        case .ended:
+            dragSelectionOverlay.backgroundColor = UIColor.systemCyan.withAlphaComponent(0.5).cgColor
+            dragSelectionOverlay.frame = CGRect(origin: panOrigin, size: CGSize(width: sender.translation(in: self.view).x, height: sender.translation(in: self.view).y))
+            var selectedStrings = Array<String>()
+            for layer in detectionOverlay?.sublayers ?? [] where layer is PTTextMatchLayer {
+                if let layer = layer as? PTTextMatchLayer {
+                    let minPt = layer.convert(CGPoint(x: layer.frame.minX, y: layer.frame.minY), to: self.view.layer)
+                    let maxPt = layer.convert(CGPoint(x: layer.frame.maxX, y: layer.frame.maxY), to: self.view.layer)
+                    
+                    if dragSelectionOverlay.frame.contains(minPt) && dragSelectionOverlay.frame.contains(maxPt) {
+                        if didTapText?(layer.textPayload) ?? false {
+                            layer.didTap()
+                        }
+                        selectedStrings.append(layer.textPayload)
+                    }
+                }
+            }
+            didDragToSelect?(selectedStrings)
+        default:
+            break
+        }
+        
+        //        self.dragSelectionOverlay.position = sender.location(in: self.view)
+    }
     
     public override func freezeFeed() {
         cameraQueue.async {
@@ -231,13 +283,21 @@ public class PTRecognitionCameraViewController: PTCameraViewController {
             try? self.imageRequestHandler?.perform(self.requests)
             self.cancellables.removeAll()
             self.moving = false
+            DispatchQueue.main.async {
+                self.pauseButton?.isHighlighted = true
+            }
         }
     }
     
     public override func resumeFeed() {
+        self.panOrigin = CGPointZero
+        self.dragSelectionOverlay.frame = CGRectZero
         cameraQueue.async {
             super.resumeFeed()
             self.setupMotion()
+            DispatchQueue.main.async {
+                self.pauseButton?.isHighlighted = false
+            }
         }
     }
     
@@ -254,7 +314,8 @@ public class PTRecognitionCameraViewController: PTCameraViewController {
     }
     
     private var detectionOverlay: CALayer! = nil
-//    private var salientOverlay: CALayer! = nil
+    private var dragSelectionOverlay: CALayer! = nil
+    //    private var salientOverlay: CALayer! = nil
     private let motionQueue = OperationQueue()
     private var requests = [VNRequest]()
     private var transform = CGAffineTransform()
@@ -366,29 +427,29 @@ public class PTRecognitionCameraViewController: PTCameraViewController {
         CATransaction.commit()
     }
     
-//    func drawSalientObjects(_ results: [Any]) {
-//        CATransaction.begin()
-//        CATransaction.setValue(kCFBooleanTrue, forKey: kCATransactionDisableActions)
-//        salientOverlay.sublayers = nil
-//        
-//        for observation in results where observation is VNSaliencyImageObservation {
-//            guard let saliencyObservation = observation as? VNSaliencyImageObservation else {
-//                continue
-//            }
-//            
-//            var unionOfSalientRegions = CGRect(x: 0, y: 0, width: 0, height: 0)
-//            let salientObjects = saliencyObservation.salientObjects ?? []
-//            for salientObject in salientObjects {
-//                let salientRect = VNImageRectForNormalizedRect(salientObject.boundingBox,
-//                                                               Int(bufferSize.width),
-//                                                               Int(bufferSize.height))
-//                let shapeLayer = self.plotObservation(observation as! VNSaliencyImageObservation, bounds: salientRect)
-//                salientOverlay.addSublayer(shapeLayer)
-//            }
-//        }
-//        self.updateLayerGeometry()
-//        CATransaction.commit()
-//    }
+    //    func drawSalientObjects(_ results: [Any]) {
+    //        CATransaction.begin()
+    //        CATransaction.setValue(kCFBooleanTrue, forKey: kCATransactionDisableActions)
+    //        salientOverlay.sublayers = nil
+    //
+    //        for observation in results where observation is VNSaliencyImageObservation {
+    //            guard let saliencyObservation = observation as? VNSaliencyImageObservation else {
+    //                continue
+    //            }
+    //
+    //            var unionOfSalientRegions = CGRect(x: 0, y: 0, width: 0, height: 0)
+    //            let salientObjects = saliencyObservation.salientObjects ?? []
+    //            for salientObject in salientObjects {
+    //                let salientRect = VNImageRectForNormalizedRect(salientObject.boundingBox,
+    //                                                               Int(bufferSize.width),
+    //                                                               Int(bufferSize.height))
+    //                let shapeLayer = self.plotObservation(observation as! VNSaliencyImageObservation, bounds: salientRect)
+    //                salientOverlay.addSublayer(shapeLayer)
+    //            }
+    //        }
+    //        self.updateLayerGeometry()
+    //        CATransaction.commit()
+    //    }
     
     public override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
         for touch in touches {
@@ -423,16 +484,19 @@ public class PTRecognitionCameraViewController: PTCameraViewController {
                                          width: bufferSize.width,
                                          height: bufferSize.height)
         detectionOverlay.position = CGPoint(x: self.view.layer.bounds.midX, y: self.view.layer.bounds.midY)
+        detectionOverlay.zPosition = 2
         self.view.layer.addSublayer(detectionOverlay)
         
-//        salientOverlay = CALayer() 
-//        salientOverlay.name = "SalientOverlay"
-//        salientOverlay.bounds = CGRect(x: 0.0,
-//                                       y: 0.0,
-//                                       width: bufferSize.width,
-//                                       height: bufferSize.height)
-//        salientOverlay.position = CGPoint(x: self.view.layer.bounds.midX, y: self.view.layer.bounds.midY)
-//        self.view.layer.addSublayer(salientOverlay)
+        self.view.layer.zPosition = 0
+        //
+        //        salientOverlay = CALayer()
+        //        salientOverlay.name = "SalientOverlay"
+        //        salientOverlay.bounds = CGRect(x: 0.0,
+        //                                       y: 0.0,
+        //                                       width: bufferSize.width,
+        //                                       height: bufferSize.height)
+        //        salientOverlay.position = CGPoint(x: self.view.layer.bounds.midX, y: self.view.layer.bounds.midY)
+        //        self.view.layer.addSublayer(salientOverlay)
         self.view.layer.masksToBounds = true
         self.view.clipsToBounds = true
     }
@@ -456,9 +520,9 @@ public class PTRecognitionCameraViewController: PTCameraViewController {
         // center the layer
         detectionOverlay.position = CGPoint(x: bounds.midX, y: bounds.midY)
         
-//        salientOverlay.setAffineTransform(transform)
+        //        salientOverlay.setAffineTransform(transform)
         // center the layer
-//        salientOverlay.position = CGPoint(x: bounds.midX, y: bounds.midY)
+        //        salientOverlay.position = CGPoint(x: bounds.midX, y: bounds.midY)
         
         CATransaction.commit()
         
@@ -471,13 +535,13 @@ public class PTRecognitionCameraViewController: PTCameraViewController {
         return shapeLayer
     }
     
-    func plotObservation(_ observation: VNSaliencyImageObservation, bounds: CGRect) -> CALayer {
-        let shapeLayer = CALayer()
-        shapeLayer.backgroundColor = UIColor.red.cgColor.copy(alpha: 0.4)
-        shapeLayer.bounds = bounds
-        shapeLayer.position = CGPoint(x: bounds.midX, y: bounds.midY)
-        return shapeLayer
-    }
+    //    func plotObservation(_ observation: VNSaliencyImageObservation, bounds: CGRect) -> CALayer {
+    //        let shapeLayer = CALayer()
+    //        shapeLayer.backgroundColor = UIColor.red.cgColor.copy(alpha: 0.4)
+    //        shapeLayer.bounds = bounds
+    //        shapeLayer.position = CGPoint(x: bounds.midX, y: bounds.midY)
+    //        return shapeLayer
+    //    }
     
     
 }
